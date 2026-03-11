@@ -115,7 +115,8 @@ export default function AdminDashboard() {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      setExtractionStatus('Error: Gemini API key not configured.');
+      setExtractionStatus('Error: Gemini API key not configured. Please add GEMINI_API_KEY to your Vercel environment variables.');
+      setIsExtracting(false);
       return;
     }
 
