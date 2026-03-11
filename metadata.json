@@ -1,0 +1,8 @@
+{
+  "name": "C-TAG Online Exam Platform",
+  "description": "A complete AI-powered Online Exam Platform for C-TAG Institute, featuring MCQ mock exams, AI proctoring, and advanced analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
