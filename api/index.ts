@@ -428,6 +428,17 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+  } else {
+    // Serve static files from the dist directory in production
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    
+    // Fallback to index.html for SPA routing
+    app.get('*', (req, res) => {
+      // Don't fallback for API routes
+      if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not Found' });
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
