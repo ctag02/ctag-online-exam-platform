@@ -15,7 +15,8 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database('ctag.db');
+const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
+const db = new Database(dbPath);
 const JWT_SECRET = process.env.JWT_SECRET || 'ctag-secret-key-2026';
 
 // Initialize Database Tables
@@ -417,9 +418,13 @@ async function startServer() {
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
