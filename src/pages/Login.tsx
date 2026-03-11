@@ -26,17 +26,24 @@ export default function Login() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
 
-      if (isLogin) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        if (data.user.role === 'admin') navigate('/admin');
-        else navigate('/dashboard');
+        if (isLogin) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          if (data.user.role === 'admin') navigate('/admin');
+          else navigate('/dashboard');
+        } else {
+          setIsLogin(true);
+          alert('Registration successful! Please login.');
+        }
       } else {
-        setIsLogin(true);
-        alert('Registration successful! Please login.');
+        const text = await res.text();
+        throw new Error(`Server Error: ${text.substring(0, 100)}...`);
       }
     } catch (err: any) {
       setError(err.message);

@@ -16,70 +16,91 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
-const db = new Database(dbPath);
+let db: any;
+
+try {
+  db = new Database(dbPath);
+  console.log('Database initialized at:', dbPath);
+} catch (err: any) {
+  console.error('Database initialization failed:', err);
+  // Fallback for Vercel if /tmp is tricky
+  try {
+    db = new Database(':memory:');
+    console.log('Database initialized in memory fallback');
+  } catch (innerErr: any) {
+    console.error('Memory database fallback failed:', innerErr);
+  }
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'ctag-secret-key-2026';
 
 // Initialize Database Tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    name TEXT,
-    role TEXT DEFAULT 'student'
-  );
+if (db) {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE,
+        password TEXT,
+        name TEXT,
+        role TEXT DEFAULT 'student'
+      );
 
-  CREATE TABLE IF NOT EXISTS questions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    text TEXT,
-    option_a TEXT,
-    option_b TEXT,
-    option_c TEXT,
-    option_d TEXT,
-    correct_answer TEXT,
-    topic TEXT,
-    difficulty TEXT
-  );
+      CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT,
+        option_a TEXT,
+        option_b TEXT,
+        option_c TEXT,
+        option_d TEXT,
+        correct_answer TEXT,
+        topic TEXT,
+        difficulty TEXT
+      );
 
-  CREATE TABLE IF NOT EXISTS exams (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    duration INTEGER, -- in minutes
-    scheduled_at DATETIME,
-    is_active INTEGER DEFAULT 0,
-    questions TEXT -- JSON array of question IDs
-  );
+      CREATE TABLE IF NOT EXISTS exams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        duration INTEGER, -- in minutes
+        scheduled_at DATETIME,
+        is_active INTEGER DEFAULT 0,
+        questions TEXT -- JSON array of question IDs
+      );
 
-  CREATE TABLE IF NOT EXISTS responses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    exam_id INTEGER,
-    question_id INTEGER,
-    answer TEXT,
-    UNIQUE(user_id, exam_id, question_id)
-  );
+      CREATE TABLE IF NOT EXISTS responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        exam_id INTEGER,
+        question_id INTEGER,
+        answer TEXT,
+        UNIQUE(user_id, exam_id, question_id)
+      );
 
-  CREATE TABLE IF NOT EXISTS results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    exam_id INTEGER,
-    score REAL,
-    correct_count INTEGER,
-    wrong_count INTEGER,
-    skipped_count INTEGER,
-    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, exam_id)
-  );
+      CREATE TABLE IF NOT EXISTS results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        exam_id INTEGER,
+        score REAL,
+        correct_count INTEGER,
+        wrong_count INTEGER,
+        skipped_count INTEGER,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, exam_id)
+      );
 
-  CREATE TABLE IF NOT EXISTS warning_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    exam_id INTEGER,
-    type TEXT,
-    message TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+      CREATE TABLE IF NOT EXISTS warning_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        exam_id INTEGER,
+        type TEXT,
+        message TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (err) {
+    console.error('Table creation failed:', err);
+  }
+}
 
 // Seed Admin User
 const adminEmail = 'support@c-tag.online';
