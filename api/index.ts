@@ -351,6 +351,14 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    console.log('Serving static files from:', distPath);
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not Found' });
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   const PORT = Number(process.env.PORT) || 3000;

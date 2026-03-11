@@ -22,7 +22,12 @@ export default function StudentDashboard() {
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user: any = {};
+  try {
+    user = JSON.parse(localStorage.getItem('user') || '{}');
+  } catch (e) {
+    user = {};
+  }
 
   useEffect(() => {
     if (!token) navigate('/');

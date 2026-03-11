@@ -322,7 +322,13 @@ export default function AdminDashboard() {
                         <div>
                           <h4 className="font-semibold text-gray-900">{exam.title}</h4>
                           <p className="text-xs text-gray-500">
-                            {exam.duration} mins • {JSON.parse(exam.questions).length} questions
+                            {exam.duration} mins • {(() => {
+                              try {
+                                return JSON.parse(exam.questions || '[]').length;
+                              } catch (e) {
+                                return 0;
+                              }
+                            })()} questions
                           </p>
                           <p className="text-xs text-gray-400 mt-1">Scheduled: {exam.scheduled_at || 'Not set'}</p>
                         </div>

@@ -8,7 +8,12 @@ import Analytics from './pages/Analytics';
 
 function PrivateRoute({ children, role }: { children: React.ReactNode, role?: string }) {
   const token = localStorage.getItem('token');
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user: any = {};
+  try {
+    user = JSON.parse(localStorage.getItem('user') || '{}');
+  } catch (e) {
+    user = {};
+  }
 
   if (!token) return <Navigate to="/" />;
   if (role && user.role !== role) return <Navigate to="/" />;
