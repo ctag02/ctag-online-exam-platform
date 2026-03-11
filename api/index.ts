@@ -1,7 +1,7 @@
 import express from 'express';
+console.log('API Server starting...');
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
@@ -14,124 +14,47 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
 let db: any;
 
+// Initialize Database
 try {
+  const { default: Database } = await import('better-sqlite3');
+  const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
   db = new Database(dbPath);
-  console.log('Database initialized at:', dbPath);
-} catch (err: any) {
-  console.error('Database initialization failed:', err);
-  try {
-    db = new Database(':memory:');
-    console.log('Database initialized in memory fallback');
-  } catch (innerErr: any) {
-    console.error('Memory database fallback failed:', innerErr);
+  
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'student');
+    CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, option_a TEXT, option_b TEXT, option_c TEXT, option_d TEXT, correct_answer TEXT, topic TEXT, difficulty TEXT);
+    CREATE TABLE IF NOT EXISTS exams (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, duration INTEGER, scheduled_at DATETIME, is_active INTEGER DEFAULT 0, questions TEXT);
+    CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, question_id INTEGER, answer TEXT, UNIQUE(user_id, exam_id, question_id));
+    CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, score REAL, correct_count INTEGER, wrong_count INTEGER, skipped_count INTEGER, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, exam_id));
+    CREATE TABLE IF NOT EXISTS warning_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, type TEXT, message TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);
+  `);
+
+  const adminEmail = 'support@c-tag.online';
+  const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
+  if (!existingAdmin) {
+    const hashedPass = bcrypt.hashSync('TE@M4ctag', 10);
+    db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
   }
+} catch (err) {
+  console.error('Database initialization failed:', err);
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ctag-secret-key-2026';
-
-// Initialize Database Tables
-if (db) {
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE,
-        password TEXT,
-        name TEXT,
-        role TEXT DEFAULT 'student'
-      );
-
-      CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        text TEXT,
-        option_a TEXT,
-        option_b TEXT,
-        option_c TEXT,
-        option_d TEXT,
-        correct_answer TEXT,
-        topic TEXT,
-        difficulty TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS exams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        duration INTEGER, -- in minutes
-        scheduled_at DATETIME,
-        is_active INTEGER DEFAULT 0,
-        questions TEXT -- JSON array of question IDs
-      );
-
-      CREATE TABLE IF NOT EXISTS responses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        exam_id INTEGER,
-        question_id INTEGER,
-        answer TEXT,
-        UNIQUE(user_id, exam_id, question_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        exam_id INTEGER,
-        score REAL,
-        correct_count INTEGER,
-        wrong_count INTEGER,
-        skipped_count INTEGER,
-        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, exam_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS warning_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        exam_id INTEGER,
-        type TEXT,
-        message TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-  } catch (err) {
-    console.error('Table creation failed:', err);
-  }
-}
-
-// Seed Admin User
-if (db) {
-  try {
-    const adminEmail = 'support@c-tag.online';
-    const adminPass = 'TE@M4ctag';
-    const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
-    if (!existingAdmin) {
-      const hashedPass = bcrypt.hashSync(adminPass, 10);
-      db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
-    }
-  } catch (err) {
-    console.error('Admin seeding failed:', err);
-  }
-}
-
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
-  }
-}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', database: !!db });
+});
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware: Auth
-const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -143,7 +66,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
   });
 };
 
-const isAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const isAdmin = (req: any, res: any, next: any) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
 };
@@ -195,7 +118,7 @@ app.post('/api/admin/questions/bulk', authenticateToken, isAdmin, upload.single(
   const data: any[] = xlsx.utils.sheet_to_json(sheet);
 
   const insert = db.prepare('INSERT INTO questions (text, option_a, option_b, option_c, option_d, correct_answer, topic, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const transaction = db.transaction((rows) => {
+  const transaction = db.transaction((rows: any) => {
     for (const row of rows) {
       insert.run(
         row.Question || row.text,
@@ -218,7 +141,7 @@ app.post('/api/admin/questions/bulk-json', authenticateToken, isAdmin, (req, res
   if (!Array.isArray(data)) return res.status(400).json({ error: 'Invalid data format' });
 
   const insert = db.prepare('INSERT INTO questions (text, option_a, option_b, option_c, option_d, correct_answer, topic, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const transaction = db.transaction((rows) => {
+  const transaction = db.transaction((rows: any) => {
     for (const row of rows) {
       insert.run(
         row.text,
@@ -428,17 +351,6 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    // Serve static files from the dist directory in production
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    
-    // Fallback to index.html for SPA routing
-    app.get('*', (req, res) => {
-      // Don't fallback for API routes
-      if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not Found' });
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
