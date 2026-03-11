@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
@@ -23,7 +22,6 @@ try {
   console.log('Database initialized at:', dbPath);
 } catch (err: any) {
   console.error('Database initialization failed:', err);
-  // Fallback for Vercel if /tmp is tricky
   try {
     db = new Database(':memory:');
     console.log('Database initialized in memory fallback');
@@ -103,12 +101,18 @@ if (db) {
 }
 
 // Seed Admin User
-const adminEmail = 'support@c-tag.online';
-const adminPass = 'TE@M4ctag';
-const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
-if (!existingAdmin) {
-  const hashedPass = bcrypt.hashSync(adminPass, 10);
-  db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
+if (db) {
+  try {
+    const adminEmail = 'support@c-tag.online';
+    const adminPass = 'TE@M4ctag';
+    const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
+    if (!existingAdmin) {
+      const hashedPass = bcrypt.hashSync(adminPass, 10);
+      db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
+    }
+  } catch (err) {
+    console.error('Admin seeding failed:', err);
+  }
 }
 
 // Extend Express Request type
@@ -140,29 +144,35 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
 };
 
 const isAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
 };
 
 // --- AUTH ROUTES ---
 app.post('/api/login', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { email, password } = req.body;
-  const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  try {
+    const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
+    res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
-  res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
 });
 
 app.post('/api/register', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { email, password, name } = req.body;
   try {
     const hashedPass = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO users (email, password, name) VALUES (?, ?, ?)').run(email, hashedPass, name);
     res.json({ message: 'User registered successfully' });
-  } catch (e) {
-    res.status(400).json({ error: 'Email already exists' });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message.includes('UNIQUE') ? 'Email already exists' : e.message });
   }
 });
 
@@ -258,7 +268,6 @@ app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   const examId = req.params.id;
   const userId = req.user.id;
 
-  // Check if already submitted
   const existingResult = db.prepare('SELECT * FROM results WHERE user_id = ? AND exam_id = ?').get(userId, examId);
   if (existingResult) {
     return res.status(403).json({ error: 'You have already submitted this exam.' });
@@ -279,10 +288,7 @@ app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   }
 
   const questions = db.prepare(`SELECT id, text, option_a, option_b, option_c, option_d, topic FROM questions WHERE id IN (${questionIds.map(() => '?').join(',')})`).all(...questionIds);
-
-  // Maintain order
   const orderedQuestions = questionIds.map((id: number) => questions.find((q: any) => q.id === id)).filter(Boolean);
-
   res.json({ ...exam, questions: orderedQuestions });
 });
 
@@ -338,14 +344,12 @@ app.get('/api/student/results', authenticateToken, (req, res) => {
   res.json(results);
 });
 
-// --- PROCTORING ROUTES ---
 app.post('/api/student/exams/:id/warning', authenticateToken, (req, res) => {
   const { type, message } = req.body;
   db.prepare('INSERT INTO warning_logs (user_id, exam_id, type, message) VALUES (?, ?, ?, ?)').run(req.user.id, req.params.id, type, message);
   res.json({ message: 'Logged' });
 });
 
-// --- ANALYTICS ROUTES ---
 app.get('/api/admin/exams/:id/analytics', authenticateToken, isAdmin, (req, res) => {
   const examId = req.params.id;
   const results = db.prepare(`
@@ -356,7 +360,6 @@ app.get('/api/admin/exams/:id/analytics', authenticateToken, isAdmin, (req, res)
     ORDER BY r.score DESC
   `).all(examId);
 
-  // Fetch all responses for this exam
   const responses = db.prepare(`
     SELECT res.user_id, res.question_id, res.answer, q.topic, q.correct_answer
     FROM responses res
@@ -364,25 +367,19 @@ app.get('/api/admin/exams/:id/analytics', authenticateToken, isAdmin, (req, res)
     WHERE res.exam_id = ?
   `).all(examId);
 
-  // Fetch exam questions to know what was available to be skipped
   const exam: any = db.prepare('SELECT questions FROM exams WHERE id = ?').get(examId);
   const questionIds = JSON.parse(exam.questions || '[]');
   const examQuestions = db.prepare(`SELECT id, topic, correct_answer FROM questions WHERE id IN (${questionIds.map(() => '?').join(',')})`).all(...questionIds);
 
-  // Process results to include topic-wise info
   const resultsWithTopics = results.map((r: any) => {
     const studentResponses = responses.filter((res: any) => res.user_id === r.user_id);
-    
     const topicStats: Record<string, { correct: number, wrong: number, skipped: number }> = {};
     
-    // Initialize topicStats with all topics in the exam
     examQuestions.forEach((q: any) => {
       if (!topicStats[q.topic]) {
         topicStats[q.topic] = { correct: 0, wrong: 0, skipped: 0 };
       }
-      
       const resp = studentResponses.find((res: any) => res.question_id === q.id);
-      
       if (!resp || !resp.answer) {
         topicStats[q.topic].skipped++;
       } else if (resp.answer.toUpperCase() === q.correct_answer.toUpperCase()) {
@@ -419,27 +416,22 @@ app.get('/api/admin/stats', authenticateToken, isAdmin, (req, res) => {
   const totalExams = db.prepare("SELECT COUNT(*) as count FROM exams").get().count;
   const questionBankSize = db.prepare("SELECT COUNT(*) as count FROM questions").get().count;
   const recentResults = db.prepare("SELECT COUNT(*) as count FROM results").get().count;
-
   res.json({ totalStudents, totalExams, questionBankSize, recentResults });
 });
 
 // Vite middleware for development
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, '..', 'dist')));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
-    });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  if (process.env.NODE_ENV !== 'test') {
+  if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'production') {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
