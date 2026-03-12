@@ -149,41 +149,73 @@ export default function AdminDashboard() {
       const base64Data = await base64Promise;
 
       setExtractionStatus('AI is analyzing questions (this may take a moment)...');
-      const genAI = new GoogleGenAI({ apiKey });
-      const response = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: 'application/pdf',
-              },
+      
+      let response;
+      let retries = 5;
+      let lastError = null;
+      const models = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-3.1-pro-preview"];
+      let currentModelIdx = 0;
+
+      while (retries > 0) {
+        try {
+          const modelName = models[currentModelIdx];
+          console.log(`Attempting extraction with model: ${modelName}`);
+          const genAI = new GoogleGenAI({ apiKey });
+          response = await genAI.models.generateContent({
+            model: modelName,
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    data: base64Data,
+                    mimeType: 'application/pdf',
+                  },
+                },
+                { text: "Extract all multiple choice questions from this PDF. For each question, provide the text, options A, B, C, D, and the correct answer (A, B, C, or D). Also provide a topic and difficulty level (Easy, Medium, Hard). Return ONLY a JSON array." }
+              ]
             },
-            { text: "Extract all multiple choice questions from this PDF. For each question, provide the text, options A, B, C, D, and the correct answer (A, B, C, or D). Also provide a topic and difficulty level (Easy, Medium, Hard). Return ONLY a JSON array." }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                text: { type: Type.STRING },
-                option_a: { type: Type.STRING },
-                option_b: { type: Type.STRING },
-                option_c: { type: Type.STRING },
-                option_d: { type: Type.STRING },
-                correct_answer: { type: Type.STRING },
-                topic: { type: Type.STRING },
-                difficulty: { type: Type.STRING },
-              },
-              required: ["text", "option_a", "option_b", "option_c", "option_d", "correct_answer"]
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    text: { type: Type.STRING },
+                    option_a: { type: Type.STRING },
+                    option_b: { type: Type.STRING },
+                    option_c: { type: Type.STRING },
+                    option_d: { type: Type.STRING },
+                    correct_answer: { type: Type.STRING },
+                    topic: { type: Type.STRING },
+                    difficulty: { type: Type.STRING },
+                  },
+                  required: ["text", "option_a", "option_b", "option_c", "option_d", "correct_answer"]
+                }
+              }
+            }
+          });
+          break; // Success!
+        } catch (err: any) {
+          lastError = err;
+          const errorMsg = err.message || '';
+          console.error(`Extraction attempt failed with ${models[currentModelIdx]}:`, err);
+          
+          if (errorMsg.includes('503') || errorMsg.includes('500') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('high demand') || errorMsg.includes('quota')) {
+            retries--;
+            if (retries > 0) {
+              // Rotate to next model
+              currentModelIdx = (currentModelIdx + 1) % models.length;
+              setExtractionStatus(`AI is busy. Switching model and retrying... (${5 - retries}/5)`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue;
             }
           }
+          throw err; // Not a retryable error or out of retries
         }
-      });
+      }
+
+      if (!response) throw lastError || new Error('Failed to get response from AI after multiple attempts');
 
       let text = response.text || '[]';
       // Clean markdown code blocks if present
