@@ -16,35 +16,43 @@ const __dirname = path.dirname(__filename);
 let db: any;
 
 // Initialize Database
-const isVercel = !!process.env.VERCEL;
+const isVercel = !!process.env.VERCEL || !!process.env.VERCEL_ENV;
 const dbPath = isVercel 
   ? path.join('/tmp', 'database.sqlite')
   : path.join(process.cwd(), 'database.sqlite');
 
+console.log(`Environment: ${isVercel ? 'Vercel' : 'Standard'}`);
 console.log('Using database at:', dbPath);
-try {
-  const { default: Database } = await import('better-sqlite3');
-  db = new Database(dbPath);
-  
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'student');
-    CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, option_a TEXT, option_b TEXT, option_c TEXT, option_d TEXT, correct_answer TEXT, topic TEXT, difficulty TEXT);
-    CREATE TABLE IF NOT EXISTS exams (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, duration INTEGER, scheduled_at DATETIME, is_active INTEGER DEFAULT 0, questions TEXT);
-    CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, question_id INTEGER, answer TEXT, UNIQUE(user_id, exam_id, question_id));
-    CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, score REAL, correct_count INTEGER, wrong_count INTEGER, skipped_count INTEGER, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, exam_id));
-    CREATE TABLE IF NOT EXISTS warning_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, type TEXT, message TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);
-  `);
 
-  const adminEmail = 'support@c-tag.online';
-  const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
-  if (!existingAdmin) {
-    const hashedPass = bcrypt.hashSync('TE@M4ctag', 10);
-    db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
+async function initDb() {
+  try {
+    const { default: Database } = await import('better-sqlite3');
+    db = new Database(dbPath);
+    
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'student');
+      CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, option_a TEXT, option_b TEXT, option_c TEXT, option_d TEXT, correct_answer TEXT, topic TEXT, difficulty TEXT);
+      CREATE TABLE IF NOT EXISTS exams (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, duration INTEGER, scheduled_at DATETIME, is_active INTEGER DEFAULT 0, questions TEXT);
+      CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, question_id INTEGER, answer TEXT, UNIQUE(user_id, exam_id, question_id));
+      CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, score REAL, correct_count INTEGER, wrong_count INTEGER, skipped_count INTEGER, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, exam_id));
+      CREATE TABLE IF NOT EXISTS warning_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_id INTEGER, type TEXT, message TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);
+    `);
+
+    const adminEmail = 'support@c-tag.online';
+    const existingAdmin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
+    if (!existingAdmin) {
+      const hashedPass = bcrypt.hashSync('TE@M4ctag', 10);
+      db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
+    }
+    console.log('Database initialized successfully');
+  } catch (err) {
+    console.error('Database initialization failed. This is common on Vercel if native modules are not supported:', err);
+    // We don't throw here to allow the server to start and return a proper JSON error
   }
-  console.log('Database initialized successfully');
-} catch (err) {
-  console.error('Database initialization failed. This is expected on some serverless environments if better-sqlite3 is not supported:', err);
 }
+
+// Start DB initialization immediately
+initDb();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ctag-secret-key-2026';
 
@@ -430,46 +438,36 @@ app.get('/api/admin/stats', authenticateToken, isAdmin, (req, res) => {
 
 // Vite middleware for development
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !isVercel) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    // On Vercel, the dist folder is included via vercel.json includeFiles
-    // We use __dirname to get the absolute path relative to the function
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const distPath = path.join(__dirname, '..', 'dist');
+  } else if (!isVercel) {
+    // Only serve static files manually if NOT on Vercel
+    // Vercel handles static files via vercel.json rewrites to index.html
+    const distPath = path.join(process.cwd(), 'dist');
     
     console.log('Serving static files from:', distPath);
     
     app.use(express.static(distPath, {
       maxAge: '1d',
-      index: false // Don't serve index.html automatically to avoid MIME issues
+      index: false
     }));
     
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'API Endpoint Not Found' });
       }
-      
-      const indexPath = path.join(distPath, 'index.html');
-      
-      // Prevent caching of index.html to ensure users always get the latest version
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      res.setHeader('Surrogate-Control', 'no-store');
-      
-      res.sendFile(indexPath);
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'production') {
+  // Don't call listen on Vercel
+  if (!isVercel && process.env.NODE_ENV !== 'test') {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
