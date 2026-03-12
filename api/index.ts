@@ -186,7 +186,8 @@ app.post('/api/admin/exams', authenticateToken, isAdmin, (req, res) => {
 
 app.patch('/api/admin/exams/:id/status', authenticateToken, isAdmin, (req, res) => {
   const { is_active } = req.body;
-  db.prepare('UPDATE exams SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, req.params.id);
+  const examId = Number(req.params.id);
+  db.prepare('UPDATE exams SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, examId);
   res.json({ message: 'Status updated' });
 });
 
@@ -203,7 +204,7 @@ app.get('/api/student/exams', authenticateToken, (req, res) => {
 
 app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
-  const examId = req.params.id;
+  const examId = Number(req.params.id);
   const userId = (req as any).user.id;
 
   console.log('Student fetching exam:', { examId, userId });
@@ -214,7 +215,10 @@ app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   }
 
   const exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
-  if (!exam) return res.status(404).json({ error: 'Exam not found. It may have been deleted.' });
+  if (!exam) {
+    console.warn(`Exam ${examId} not found in database`);
+    return res.status(404).json({ error: 'Exam not found. It may have been deleted.' });
+  }
   
   if (!exam.is_active) {
     return res.status(403).json({ error: 'This exam is not currently active. Please wait for the administrator to start the session.' });
@@ -244,18 +248,31 @@ app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
 app.post('/api/student/exams/:id/response', authenticateToken, (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
   const { question_id, answer } = req.body;
-  db.prepare('INSERT OR REPLACE INTO responses (user_id, exam_id, question_id, answer) VALUES (?, ?, ?, ?)').run((req as any).user.id, req.params.id, question_id, answer);
+  const examId = Number(req.params.id);
+  db.prepare('INSERT OR REPLACE INTO responses (user_id, exam_id, question_id, answer) VALUES (?, ?, ?, ?)').run((req as any).user.id, examId, question_id, answer);
   res.json({ message: 'Saved' });
 });
 
 app.post('/api/student/exams/:id/submit', authenticateToken, (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
-  const examId = req.params.id;
+  const examId = Number(req.params.id);
   const userId = (req as any).user.id;
 
   const exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
-  const questionIds = JSON.parse(exam.questions);
-  const questions = db.prepare(`SELECT id, correct_answer FROM questions WHERE id IN (${questionIds.join(',')})`).all();
+  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+
+  let questionIds = [];
+  try {
+    questionIds = typeof exam.questions === 'string' ? JSON.parse(exam.questions || '[]') : (exam.questions || []);
+  } catch (e) {
+    return res.status(500).json({ error: 'Invalid exam data' });
+  }
+
+  if (questionIds.length === 0) {
+    return res.status(400).json({ error: 'Exam has no questions' });
+  }
+
+  const questions = db.prepare(`SELECT id, correct_answer FROM questions WHERE id IN (${questionIds.map(() => '?').join(',')})`).all(...questionIds);
   const responses = db.prepare('SELECT * FROM responses WHERE user_id = ? AND exam_id = ?').all(userId, examId);
 
   let correct = 0;
@@ -299,12 +316,13 @@ app.get('/api/student/results', authenticateToken, (req, res) => {
 app.post('/api/student/exams/:id/warning', authenticateToken, (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
   const { type, message } = req.body;
-  db.prepare('INSERT INTO warning_logs (user_id, exam_id, type, message) VALUES (?, ?, ?, ?)').run((req as any).user.id, req.params.id, type, message);
+  const examId = Number(req.params.id);
+  db.prepare('INSERT INTO warning_logs (user_id, exam_id, type, message) VALUES (?, ?, ?, ?)').run((req as any).user.id, examId, type, message);
   res.json({ message: 'Logged' });
 });
 
 app.get('/api/admin/exams/:id/analytics', authenticateToken, isAdmin, (req, res) => {
-  const examId = req.params.id;
+  const examId = Number(req.params.id);
   const results = db.prepare(`
     SELECT r.*, u.name as student_name, u.email as student_email 
     FROM results r 
