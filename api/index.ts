@@ -204,20 +204,29 @@ app.get('/api/student/exams', authenticateToken, (req, res) => {
 
 app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
-  const examId = Number(req.params.id);
+  const rawId = req.params.id;
+  const examId = Number(rawId);
   const userId = (req as any).user.id;
 
-  console.log('Student fetching exam:', { examId, userId });
+  console.log('Student fetching exam:', { examId, rawId, userId });
 
   const existingResult = db.prepare('SELECT * FROM results WHERE user_id = ? AND exam_id = ?').get(userId, examId);
   if (existingResult) {
     return res.status(403).json({ error: 'You have already submitted this exam.' });
   }
 
-  const exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
+  // Try matching by number first, then fallback to string just in case
+  let exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
   if (!exam) {
-    console.warn(`Exam ${examId} not found in database`);
-    return res.status(404).json({ error: 'Exam not found. It may have been deleted.' });
+    exam = db.prepare('SELECT * FROM exams WHERE id = ?').get(rawId);
+  }
+
+  if (!exam) {
+    console.warn(`Exam ${examId} (raw: ${rawId}) not found in database`);
+    return res.status(404).json({ 
+      error: `Exam not found (ID: ${rawId}). It may have been deleted or the database session was reset.`,
+      debug: { requestedId: rawId, parsedId: examId }
+    });
   }
   
   if (!exam.is_active) {
