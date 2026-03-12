@@ -401,6 +401,13 @@ async function startServer() {
       }
       
       const indexPath = path.join(distPath, 'index.html');
+      
+      // Prevent caching of index.html to ensure users always get the latest version
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+      
       res.sendFile(indexPath);
     });
   }

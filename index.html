@@ -12,6 +12,33 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Version: 1.0.1 - Force Refresh -->
+    <script>
+      // Force unregister old service workers that might be caching broken states
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+            console.log('Old SW unregistered');
+          }
+        });
+      }
+
+      // Detect if we are stuck on a stale version (e.g. if /src/main.tsx is still present in DOM)
+      // This is a safety check for devices that have aggressive caching
+      window.addEventListener('load', () => {
+        const scripts = document.getElementsByTagName('script');
+        for (let i = 0; i < scripts.length; i++) {
+          if (scripts[i].src.includes('/src/main.tsx')) {
+            console.warn('Stale version detected, forcing reload...');
+            localStorage.clear();
+            sessionStorage.clear();
+            window.location.reload(true);
+            break;
+          }
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
