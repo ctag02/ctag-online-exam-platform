@@ -387,16 +387,20 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // On Vercel, the dist folder is included via vercel.json includeFiles
     const distPath = path.join(process.cwd(), 'dist');
-    console.log('Static path debug:', {
-      cwd: process.cwd(),
-      distPath,
-      exists: true // We can't easily check fs here without importing fs
-    });
+    
     app.use(express.static(distPath));
+    
     app.get('*', (req, res) => {
-      if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not Found' });
-      res.sendFile(path.join(distPath, 'index.html'));
+      // If it's an API call that reached here, it's a 404
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API Endpoint Not Found' });
+      }
+      
+      // Serve the built index.html for all other routes (SPA support)
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath);
     });
   }
 
