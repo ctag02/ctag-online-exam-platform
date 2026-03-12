@@ -16,19 +16,14 @@ const __dirname = path.dirname(__filename);
 let db: any;
 
 // Initialize Database
-console.log('API Server starting...');
-console.log('Environment:', {
-  NODE_ENV: process.env.NODE_ENV,
-  VERCEL: process.env.VERCEL,
-  VERCEL_ENV: process.env.VERCEL_ENV,
-  HAS_JWT_SECRET: !!process.env.JWT_SECRET,
-  HAS_GEMINI_KEY: !!process.env.GEMINI_API_KEY
-});
-console.log('Initializing database...');
+const isVercel = !!process.env.VERCEL;
+const dbPath = isVercel 
+  ? path.join('/tmp', 'database.sqlite')
+  : path.join(process.cwd(), 'database.sqlite');
+
+console.log('Using database at:', dbPath);
 try {
   const { default: Database } = await import('better-sqlite3');
-  const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
-  console.log('Using database path:', dbPath);
   db = new Database(dbPath);
   
   db.exec(`
@@ -388,17 +383,23 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // On Vercel, the dist folder is included via vercel.json includeFiles
-    const distPath = path.join(process.cwd(), 'dist');
+    // We use __dirname to get the absolute path relative to the function
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const distPath = path.join(__dirname, '..', 'dist');
     
-    app.use(express.static(distPath));
+    console.log('Serving static files from:', distPath);
+    
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      index: false // Don't serve index.html automatically to avoid MIME issues
+    }));
     
     app.get('*', (req, res) => {
-      // If it's an API call that reached here, it's a 404
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'API Endpoint Not Found' });
       }
       
-      // Serve the built index.html for all other routes (SPA support)
       const indexPath = path.join(distPath, 'index.html');
       res.sendFile(indexPath);
     });
