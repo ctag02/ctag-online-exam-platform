@@ -17,9 +17,11 @@ const __dirname = path.dirname(__filename);
 let db: any;
 
 // Initialize Database
+console.log('Initializing database...');
 try {
   const { default: Database } = await import('better-sqlite3');
   const dbPath = process.env.VERCEL ? '/tmp/ctag.db' : 'ctag.db';
+  console.log('Using database path:', dbPath);
   db = new Database(dbPath);
   
   db.exec(`
@@ -37,8 +39,9 @@ try {
     const hashedPass = bcrypt.hashSync('TE@M4ctag', 10);
     db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
   }
+  console.log('Database initialized successfully');
 } catch (err) {
-  console.error('Database initialization failed:', err);
+  console.error('Database initialization failed. This is expected on some serverless environments if better-sqlite3 is not supported:', err);
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ctag-secret-key-2026';
