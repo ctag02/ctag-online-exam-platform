@@ -80,27 +80,56 @@ const isAdmin = (req: any, res: any, next: any) => {
 app.post('/api/login', (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
   const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
   try {
-    const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user || !bcrypt.compareSync(password, user.password)) {
+    // Case-insensitive search for email
+    const user: any = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email);
+    
+    if (!user) {
+      console.log(`Login failed: User not found for email ${email}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
+
+    const isPasswordValid = bcrypt.compareSync(password, user.password);
+    if (!isPasswordValid) {
+      console.log(`Login failed: Invalid password for email ${email}`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, name: user.name }, 
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    console.log(`Login successful: ${email} (${user.role})`);
     res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'An internal server error occurred' });
   }
 });
 
 app.post('/api/register', (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
   const { email, password, name } = req.body;
+  if (!email || !password || !name) return res.status(400).json({ error: 'All fields are required' });
+
   try {
     const hashedPass = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO users (email, password, name) VALUES (?, ?, ?)').run(email, hashedPass, name);
-    res.json({ message: 'User registered successfully' });
+    const info = db.prepare('INSERT INTO users (email, password, name) VALUES (?, ?, ?)').run(email, hashedPass, name);
+    
+    if (info.changes > 0) {
+      console.log(`Registration successful: ${email}`);
+      res.json({ message: 'User registered successfully' });
+    } else {
+      throw new Error('Failed to register user');
+    }
   } catch (e: any) {
-    res.status(400).json({ error: e.message.includes('UNIQUE') ? 'Email already exists' : e.message });
+    console.error('Registration error:', e);
+    const errorMessage = e.message.includes('UNIQUE') ? 'Email already exists' : 'Registration failed';
+    res.status(400).json({ error: errorMessage });
   }
 });
 

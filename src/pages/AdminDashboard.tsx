@@ -33,18 +33,30 @@ export default function AdminDashboard() {
 
   const fetchStats = async () => {
     const res = await fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.status === 401 || res.status === 403) {
+      handleLogout();
+      return;
+    }
     const data = await res.json();
     setStats(data);
   };
 
   const fetchQuestions = async () => {
     const res = await fetch('/api/admin/questions', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.status === 401 || res.status === 403) {
+      handleLogout();
+      return;
+    }
     const data = await res.json();
     setQuestions(data);
   };
 
   const fetchExams = async () => {
     const res = await fetch('/api/admin/exams', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.status === 401 || res.status === 403) {
+      handleLogout();
+      return;
+    }
     const data = await res.json();
     setExams(data);
   };

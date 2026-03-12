@@ -41,6 +41,12 @@ export default function StudentDashboard() {
         fetch('/api/student/exams', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/student/results', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
+
+      if (examsRes.status === 401 || examsRes.status === 403 || resultsRes.status === 401 || resultsRes.status === 403) {
+        handleLogout();
+        return;
+      }
+
       const examsData = await examsRes.json();
       const resultsData = await resultsRes.json();
       setActiveExams(examsData);
