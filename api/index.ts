@@ -1,5 +1,4 @@
 import express from 'express';
-console.log('API Server starting...');
 import path from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -17,6 +16,14 @@ const __dirname = path.dirname(__filename);
 let db: any;
 
 // Initialize Database
+console.log('API Server starting...');
+console.log('Environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL: process.env.VERCEL,
+  VERCEL_ENV: process.env.VERCEL_ENV,
+  HAS_JWT_SECRET: !!process.env.JWT_SECRET,
+  HAS_GEMINI_KEY: !!process.env.GEMINI_API_KEY
+});
 console.log('Initializing database...');
 try {
   const { default: Database } = await import('better-sqlite3');
