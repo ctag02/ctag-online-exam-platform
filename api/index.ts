@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -26,6 +27,15 @@ console.log('Using database at:', dbPath);
 
 async function initDb() {
   try {
+    // On Vercel, if the database doesn't exist in /tmp, try to copy it from the root
+    if (isVercel && !fs.existsSync(dbPath)) {
+      const rootDbPath = path.join(process.cwd(), 'database.sqlite');
+      if (fs.existsSync(rootDbPath)) {
+        console.log('Copying database from root to /tmp for persistence');
+        fs.copyFileSync(rootDbPath, dbPath);
+      }
+    }
+
     const { default: Database } = await import('better-sqlite3');
     db = new Database(dbPath);
     
@@ -445,11 +455,9 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else if (!isVercel) {
-    // Only serve static files manually if NOT on Vercel
-    // Vercel handles static files via vercel.json rewrites to index.html
+  } else {
+    // Serve static files from the dist directory
     const distPath = path.join(process.cwd(), 'dist');
-    
     console.log('Serving static files from:', distPath);
     
     app.use(express.static(distPath, {
@@ -458,15 +466,23 @@ async function startServer() {
     }));
     
     app.get('*', (req, res) => {
+      // If it's an API request that wasn't caught, return 404
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'API Endpoint Not Found' });
       }
-      res.sendFile(path.join(distPath, 'index.html'));
+      
+      // Otherwise serve index.html for SPA routing
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        console.error('index.html not found at:', indexPath);
+        res.status(404).send('Frontend build not found. Please run npm run build.');
+      }
     });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  // Don't call listen on Vercel
   if (!isVercel && process.env.NODE_ENV !== 'test') {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${PORT}`);
