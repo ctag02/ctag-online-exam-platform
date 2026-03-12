@@ -388,7 +388,11 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    console.log('Serving static files from:', distPath);
+    console.log('Static path debug:', {
+      cwd: process.cwd(),
+      distPath,
+      exists: true // We can't easily check fs here without importing fs
+    });
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not Found' });
