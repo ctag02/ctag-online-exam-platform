@@ -55,6 +55,8 @@ export default function AdminDashboard() {
       return;
     }
 
+    console.log('Sending exam data:', { ...newExam, questions: selectedQuestions });
+
     const res = await fetch('/api/admin/exams', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -113,9 +115,9 @@ export default function AdminDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.CUSTOM_GEMINI_API_KEY;
     if (!apiKey) {
-      setExtractionStatus('Error: Gemini API key not configured. Please add GEMINI_API_KEY to your Vercel environment variables.');
+      setExtractionStatus('Error: Gemini API key not configured. Please add CUSTOM_GEMINI_API_KEY to your AI Studio environment variables.');
       setIsExtracting(false);
       return;
     }
@@ -324,8 +326,17 @@ export default function AdminDashboard() {
                           <p className="text-xs text-gray-500">
                             {exam.duration} mins • {(() => {
                               try {
-                                return JSON.parse(exam.questions || '[]').length;
+                                if (!exam.questions) return 0;
+                                // Handle both stringified JSON and already parsed arrays
+                                const qData = typeof exam.questions === 'string' 
+                                  ? JSON.parse(exam.questions) 
+                                  : exam.questions;
+                                
+                                if (Array.isArray(qData)) return qData.length;
+                                if (typeof qData === 'object' && qData !== null) return Object.keys(qData).length;
+                                return 0;
                               } catch (e) {
+                                console.error('Error parsing questions for exam:', exam.id, e);
                                 return 0;
                               }
                             })()} questions

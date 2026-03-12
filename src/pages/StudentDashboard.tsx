@@ -88,7 +88,7 @@ export default function StudentDashboard() {
                       <Clock className="w-8 h-8 text-gray-400" />
                     </div>
                     <p className="text-gray-500 font-medium">No active exams at the moment.</p>
-                    <p className="text-xs text-gray-400 mt-1">Check back later or click refresh.</p>
+                    <p className="text-xs text-gray-400 mt-1">Please wait for the administrator to start an exam or click refresh.</p>
                   </div>
                 </Card>
               ) : (

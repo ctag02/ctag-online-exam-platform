@@ -166,9 +166,17 @@ app.get('/api/admin/exams', authenticateToken, isAdmin, (req, res) => {
 });
 
 app.post('/api/admin/exams', authenticateToken, isAdmin, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { title, duration, scheduled_at, questions } = req.body;
-  const result = db.prepare('INSERT INTO exams (title, duration, scheduled_at, questions) VALUES (?, ?, ?, ?)').run(title, duration, scheduled_at, JSON.stringify(questions));
-  res.json({ id: result.lastInsertRowid });
+  console.log('Creating exam:', { title, questions });
+  try {
+    const questionsStr = JSON.stringify(questions || []);
+    const result = db.prepare('INSERT INTO exams (title, duration, scheduled_at, questions) VALUES (?, ?, ?, ?)').run(title, duration, scheduled_at, questionsStr);
+    res.json({ id: result.lastInsertRowid });
+  } catch (err: any) {
+    console.error('Error creating exam:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.patch('/api/admin/exams/:id/status', authenticateToken, isAdmin, (req, res) => {
@@ -179,17 +187,21 @@ app.patch('/api/admin/exams/:id/status', authenticateToken, isAdmin, (req, res) 
 
 // --- STUDENT EXAM ROUTES ---
 app.get('/api/student/exams', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const exams = db.prepare(`
     SELECT e.* FROM exams e 
     WHERE e.is_active = 1 
     AND e.id NOT IN (SELECT exam_id FROM results WHERE user_id = ?)
-  `).all(req.user.id);
+  `).all((req as any).user.id);
   res.json(exams);
 });
 
 app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const examId = req.params.id;
-  const userId = req.user.id;
+  const userId = (req as any).user.id;
+
+  console.log('Student fetching exam:', { examId, userId });
 
   const existingResult = db.prepare('SELECT * FROM results WHERE user_id = ? AND exam_id = ?').get(userId, examId);
   if (existingResult) {
@@ -197,33 +209,44 @@ app.get('/api/student/exams/:id', authenticateToken, (req, res) => {
   }
 
   const exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
-  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+  if (!exam) return res.status(404).json({ error: 'Exam not found. It may have been deleted.' });
+  
+  if (!exam.is_active) {
+    return res.status(403).json({ error: 'This exam is not currently active. Please wait for the administrator to start the session.' });
+  }
 
   let questionIds = [];
   try {
-    questionIds = JSON.parse(exam.questions || '[]');
+    questionIds = typeof exam.questions === 'string' ? JSON.parse(exam.questions || '[]') : (exam.questions || []);
   } catch (e) {
+    console.error('Error parsing exam questions:', e);
     questionIds = [];
   }
 
-  if (questionIds.length === 0) {
+  console.log('Exam question IDs:', questionIds);
+
+  if (!Array.isArray(questionIds) || questionIds.length === 0) {
     return res.json({ ...exam, questions: [] });
   }
 
   const questions = db.prepare(`SELECT id, text, option_a, option_b, option_c, option_d, topic FROM questions WHERE id IN (${questionIds.map(() => '?').join(',')})`).all(...questionIds);
+  console.log('Fetched questions count:', questions.length);
+  
   const orderedQuestions = questionIds.map((id: number) => questions.find((q: any) => q.id === id)).filter(Boolean);
   res.json({ ...exam, questions: orderedQuestions });
 });
 
 app.post('/api/student/exams/:id/response', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { question_id, answer } = req.body;
-  db.prepare('INSERT OR REPLACE INTO responses (user_id, exam_id, question_id, answer) VALUES (?, ?, ?, ?)').run(req.user.id, req.params.id, question_id, answer);
+  db.prepare('INSERT OR REPLACE INTO responses (user_id, exam_id, question_id, answer) VALUES (?, ?, ?, ?)').run((req as any).user.id, req.params.id, question_id, answer);
   res.json({ message: 'Saved' });
 });
 
 app.post('/api/student/exams/:id/submit', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const examId = req.params.id;
-  const userId = req.user.id;
+  const userId = (req as any).user.id;
 
   const exam: any = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
   const questionIds = JSON.parse(exam.questions);
@@ -258,18 +281,20 @@ app.post('/api/student/exams/:id/submit', authenticateToken, (req, res) => {
 });
 
 app.get('/api/student/results', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const results = db.prepare(`
     SELECT r.*, e.title as exam_title 
     FROM results r 
     JOIN exams e ON r.exam_id = e.id 
     WHERE r.user_id = ?
-  `).all(req.user.id);
+  `).all((req as any).user.id);
   res.json(results);
 });
 
 app.post('/api/student/exams/:id/warning', authenticateToken, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { type, message } = req.body;
-  db.prepare('INSERT INTO warning_logs (user_id, exam_id, type, message) VALUES (?, ?, ?, ?)').run(req.user.id, req.params.id, type, message);
+  db.prepare('INSERT INTO warning_logs (user_id, exam_id, type, message) VALUES (?, ?, ?, ?)').run((req as any).user.id, req.params.id, type, message);
   res.json({ message: 'Logged' });
 });
 
