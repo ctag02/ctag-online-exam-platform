@@ -108,12 +108,12 @@ service cloud.firestore {
     match /exams/{examId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin() && isValidExam(request.resource.data);
+    }
 
-      match /responses/{responseId} {
-        allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-        allow create: if isAuthenticated() && isValidResponse(request.resource.data);
-        allow update: if isAuthenticated() && isValidResponse(request.resource.data) && resource.data.userId == request.auth.uid;
-      }
+    match /responses/{responseId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidResponse(request.resource.data);
+      allow update: if isAuthenticated() && isValidResponse(request.resource.data) && resource.data.userId == request.auth.uid;
     }
 
     match /results/{resultId} {
