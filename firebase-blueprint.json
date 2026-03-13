@@ -18,16 +18,16 @@
       "type": "object",
       "properties": {
         "text": { "type": "string" },
-        "option_a": { "type": "string" },
-        "option_b": { "type": "string" },
-        "option_c": { "type": "string" },
-        "option_d": { "type": "string" },
-        "correct_answer": { "type": "string", "enum": ["A", "B", "C", "D"] },
+        "optionA": { "type": "string" },
+        "optionB": { "type": "string" },
+        "optionC": { "type": "string" },
+        "optionD": { "type": "string" },
+        "correctAnswer": { "type": "string", "enum": ["A", "B", "C", "D"] },
         "topic": { "type": "string" },
         "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["text", "option_a", "option_b", "option_c", "option_d", "correct_answer"]
+      "required": ["text", "optionA", "optionB", "optionC", "optionD", "correctAnswer"]
     },
     "Exam": {
       "title": "Exam",
@@ -36,12 +36,12 @@
       "properties": {
         "title": { "type": "string" },
         "duration": { "type": "integer" },
-        "scheduled_at": { "type": "string", "format": "date-time" },
-        "is_active": { "type": "boolean" },
+        "scheduledAt": { "type": "string", "format": "date-time" },
+        "isActive": { "type": "boolean" },
         "questionIds": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["title", "duration", "scheduled_at", "is_active", "questionIds"]
+      "required": ["title", "duration", "scheduledAt", "isActive", "questionIds"]
     },
     "Response": {
       "title": "Response",
@@ -64,12 +64,19 @@
         "userId": { "type": "string" },
         "examId": { "type": "string" },
         "score": { "type": "number" },
-        "correct_count": { "type": "integer" },
-        "wrong_count": { "type": "integer" },
-        "skipped_count": { "type": "integer" },
-        "submitted_at": { "type": "string", "format": "date-time" }
+        "correctCount": { "type": "integer" },
+        "wrongCount": { "type": "integer" },
+        "skippedCount": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "examTitle": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "skippedTopicsCount": { "type": "integer" },
+        "wrongTopicsCount": { "type": "integer" },
+        "skippedTopicsList": { "type": "string" },
+        "wrongTopicsList": { "type": "string" }
       },
-      "required": ["userId", "examId", "score", "correct_count", "wrong_count", "skipped_count", "submitted_at"]
+      "required": ["userId", "examId", "score", "correctCount", "wrongCount", "skippedCount", "submittedAt"]
     },
     "WarningLog": {
       "title": "WarningLog",
@@ -80,7 +87,8 @@
         "examId": { "type": "string" },
         "type": { "type": "string" },
         "message": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "timestamp": { "type": "string", "format": "date-time" },
+        "studentName": { "type": "string" }
       },
       "required": ["userId", "examId", "type", "message", "timestamp"]
     }

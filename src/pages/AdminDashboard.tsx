@@ -30,9 +30,9 @@ export default function AdminDashboard() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
-  const [newExam, setNewExam] = useState({ title: '', duration: 150, scheduled_at: '' });
+  const [newExam, setNewExam] = useState({ title: '', duration: 150, scheduledAt: '' });
   const [newQuestion, setNewQuestion] = useState<Partial<Question>>({
-    text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', topic: '', difficulty: 'Medium'
+    text: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswer: 'A', topic: '', difficulty: 'Medium'
   });
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionStatus, setExtractionStatus] = useState<string | null>(null);
@@ -118,11 +118,11 @@ export default function AdminDashboard() {
       await addDoc(collection(db, 'exams'), {
         ...newExam,
         questionIds: selectedQuestions,
-        is_active: false,
+        isActive: false,
         createdAt: new Date().toISOString()
       });
       alert('Exam created successfully!');
-      setNewExam({ title: '', duration: 150, scheduled_at: '' });
+      setNewExam({ title: '', duration: 150, scheduledAt: '' });
       setSelectedQuestions([]);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'exams');
@@ -132,7 +132,7 @@ export default function AdminDashboard() {
   const handleToggleExam = async (id: string, currentStatus: boolean) => {
     try {
       await updateDoc(doc(db, 'exams', id), {
-        is_active: !currentStatus
+        isActive: !currentStatus
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `exams/${id}`);
@@ -146,7 +146,7 @@ export default function AdminDashboard() {
         createdAt: new Date().toISOString()
       });
       alert('Question added!');
-      setNewQuestion({ text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', topic: '', difficulty: 'Medium' });
+      setNewQuestion({ text: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswer: 'A', topic: '', difficulty: 'Medium' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'questions');
     }
@@ -170,11 +170,11 @@ export default function AdminDashboard() {
           const qRef = doc(collection(db, 'questions'));
           batch.set(qRef, {
             text: row.text || row.Question,
-            option_a: row.option_a || row.A,
-            option_b: row.option_b || row.B,
-            option_c: row.option_c || row.C,
-            option_d: row.option_d || row.D,
-            correct_answer: row.correct_answer || row.Answer,
+            optionA: row.optionA || row.option_a || row.A,
+            optionB: row.optionB || row.option_b || row.B,
+            optionC: row.optionC || row.option_c || row.C,
+            optionD: row.optionD || row.option_d || row.D,
+            correctAnswer: row.correctAnswer || row.correct_answer || row.Answer,
             topic: row.topic || row.Topic || 'General',
             difficulty: row.difficulty || row.Difficulty || 'Medium',
             createdAt: new Date().toISOString()
@@ -230,7 +230,7 @@ export default function AdminDashboard() {
             contents: {
               parts: [
                 { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
-                { text: "Extract all multiple choice questions from this PDF. Return ONLY a JSON array of objects with: text, option_a, option_b, option_c, option_d, correct_answer (A/B/C/D), topic, difficulty." }
+                { text: "Extract all multiple choice questions from this PDF. Return ONLY a JSON array of objects with: text, optionA, optionB, optionC, optionD, correctAnswer (A/B/C/D), topic, difficulty." }
               ]
             },
             config: {
@@ -241,15 +241,15 @@ export default function AdminDashboard() {
                   type: Type.OBJECT,
                   properties: {
                     text: { type: Type.STRING },
-                    option_a: { type: Type.STRING },
-                    option_b: { type: Type.STRING },
-                    option_c: { type: Type.STRING },
-                    option_d: { type: Type.STRING },
-                    correct_answer: { type: Type.STRING },
+                    optionA: { type: Type.STRING },
+                    optionB: { type: Type.STRING },
+                    optionC: { type: Type.STRING },
+                    optionD: { type: Type.STRING },
+                    correctAnswer: { type: Type.STRING },
                     topic: { type: Type.STRING },
                     difficulty: { type: Type.STRING },
                   },
-                  required: ["text", "option_a", "option_b", "option_c", "option_d", "correct_answer"]
+                  required: ["text", "optionA", "optionB", "optionC", "optionD", "correctAnswer"]
                 }
               }
             }
@@ -403,15 +403,15 @@ export default function AdminDashboard() {
                           <p className="text-xs text-gray-500">
                             {exam.duration} mins • {Array.isArray(exam.questionIds) ? exam.questionIds.length : 0} questions
                           </p>
-                          <p className="text-xs text-gray-400 mt-1">Scheduled: {exam.scheduled_at || 'Not set'}</p>
+                          <p className="text-xs text-gray-400 mt-1">Scheduled: {exam.scheduledAt || 'Not set'}</p>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Button 
-                            variant={exam.is_active ? 'danger' : 'primary'} 
+                            variant={exam.isActive ? 'danger' : 'primary'} 
                             size="sm"
-                            onClick={() => handleToggleExam(exam.id, !!exam.is_active)}
+                            onClick={() => handleToggleExam(exam.id, !!exam.isActive)}
                           >
-                            {exam.is_active ? <><Square className="w-3 h-3 mr-1" /> Stop</> : <><Play className="w-3 h-3 mr-1" /> Start</>}
+                            {exam.isActive ? <><Square className="w-3 h-3 mr-1" /> Stop</> : <><Play className="w-3 h-3 mr-1" /> Start</>}
                           </Button>
                           <Button variant="secondary" size="sm" onClick={() => navigate(`/admin/analytics/${exam.id}`)}>
                             <BarChart2 className="w-3 h-3 mr-1" /> Analytics
@@ -442,8 +442,8 @@ export default function AdminDashboard() {
                   <Input 
                     label="Scheduled At" 
                     type="datetime-local" 
-                    value={newExam.scheduled_at}
-                    onChange={(e) => setNewExam({ ...newExam, scheduled_at: e.target.value })}
+                    value={newExam.scheduledAt}
+                    onChange={(e) => setNewExam({ ...newExam, scheduledAt: e.target.value })}
                   />
                   
                   <div className="mb-4">
@@ -525,10 +525,10 @@ export default function AdminDashboard() {
                       </div>
                       <p className="text-sm font-medium text-gray-900 mb-3">{q.text}</p>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className={`text-xs p-2 rounded ${q.correct_answer === 'A' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>A: {q.option_a}</div>
-                        <div className={`text-xs p-2 rounded ${q.correct_answer === 'B' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>B: {q.option_b}</div>
-                        <div className={`text-xs p-2 rounded ${q.correct_answer === 'C' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>C: {q.option_c}</div>
-                        <div className={`text-xs p-2 rounded ${q.correct_answer === 'D' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>D: {q.option_d}</div>
+                        <div className={`text-xs p-2 rounded ${q.correctAnswer === 'A' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>A: {q.optionA}</div>
+                        <div className={`text-xs p-2 rounded ${q.correctAnswer === 'B' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>B: {q.optionB}</div>
+                        <div className={`text-xs p-2 rounded ${q.correctAnswer === 'C' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>C: {q.optionC}</div>
+                        <div className={`text-xs p-2 rounded ${q.correctAnswer === 'D' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-gray-50 text-gray-600'}`}>D: {q.optionD}</div>
                       </div>
                     </div>
                   ))}
@@ -541,17 +541,17 @@ export default function AdminDashboard() {
                 <div className="space-y-4">
                   <Input label="Question Text" value={newQuestion.text} onChange={(e) => setNewQuestion({ ...newQuestion, text: e.target.value })} />
                   <div className="grid grid-cols-2 gap-2">
-                    <Input label="Option A" value={newQuestion.option_a} onChange={(e) => setNewQuestion({ ...newQuestion, option_a: e.target.value })} />
-                    <Input label="Option B" value={newQuestion.option_b} onChange={(e) => setNewQuestion({ ...newQuestion, option_b: e.target.value })} />
-                    <Input label="Option C" value={newQuestion.option_c} onChange={(e) => setNewQuestion({ ...newQuestion, option_c: e.target.value })} />
-                    <Input label="Option D" value={newQuestion.option_d} onChange={(e) => setNewQuestion({ ...newQuestion, option_d: e.target.value })} />
+                    <Input label="Option A" value={newQuestion.optionA} onChange={(e) => setNewQuestion({ ...newQuestion, optionA: e.target.value })} />
+                    <Input label="Option B" value={newQuestion.optionB} onChange={(e) => setNewQuestion({ ...newQuestion, optionB: e.target.value })} />
+                    <Input label="Option C" value={newQuestion.optionC} onChange={(e) => setNewQuestion({ ...newQuestion, optionC: e.target.value })} />
+                    <Input label="Option D" value={newQuestion.optionD} onChange={(e) => setNewQuestion({ ...newQuestion, optionD: e.target.value })} />
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Correct Answer</label>
                     <select 
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newQuestion.correct_answer}
-                      onChange={(e) => setNewQuestion({ ...newQuestion, correct_answer: e.target.value })}
+                      value={newQuestion.correctAnswer}
+                      onChange={(e) => setNewQuestion({ ...newQuestion, correctAnswer: e.target.value })}
                     >
                       <option value="A">Option A</option>
                       <option value="B">Option B</option>

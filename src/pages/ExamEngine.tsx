@@ -75,16 +75,7 @@ export default function ExamEngine() {
       const examData = examDoc.data() as Exam;
       
       // Fetch questions
-      let questionIds: string[] = [];
-      if (Array.isArray(examData.questions)) {
-        questionIds = examData.questions;
-      } else if (typeof examData.questions === 'string') {
-        try {
-          questionIds = JSON.parse(examData.questions);
-        } catch (e) {
-          questionIds = [];
-        }
-      }
+      const questionIds = examData.questionIds || [];
 
       if (questionIds.length === 0) {
         alert('This exam has no questions.');
@@ -110,14 +101,14 @@ export default function ExamEngine() {
       // Fetch existing responses
       const responsesQuery = query(
         collection(db, 'responses'),
-        where('user_id', '==', user.uid),
-        where('exam_id', '==', id)
+        where('userId', '==', user.uid),
+        where('examId', '==', id)
       );
       const responsesSnapshot = await getDocs(responsesQuery);
       const existingAnswers: Record<string, string> = {};
       responsesSnapshot.forEach(doc => {
         const data = doc.data();
-        existingAnswers[data.question_id] = data.answer;
+        existingAnswers[data.questionId] = data.answer;
       });
       setAnswers(existingAnswers);
 

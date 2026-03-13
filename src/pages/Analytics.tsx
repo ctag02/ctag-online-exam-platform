@@ -47,7 +47,7 @@ export default function Analytics() {
       // Fetch results
       const resultsQuery = query(
         collection(db, 'results'),
-        where('exam_id', '==', id),
+        where('examId', '==', id),
         orderBy('score', 'desc')
       );
       const resultsSnapshot = await getDocs(resultsQuery);
@@ -56,14 +56,14 @@ export default function Analytics() {
         return {
           id: doc.id,
           ...d,
-          submitted_at: d.submitted_at?.toDate?.()?.toISOString() || d.submitted_at
+          submittedAt: d.submittedAt?.toDate?.()?.toISOString() || d.submittedAt
         };
       }) as Result[];
 
       // Fetch warnings
       const warningsQuery = query(
         collection(db, 'warning_logs'),
-        where('exam_id', '==', id),
+        where('examId', '==', id),
         orderBy('timestamp', 'desc')
       );
       const warningsSnapshot = await getDocs(warningsQuery);
@@ -89,16 +89,16 @@ export default function Analytics() {
     
     const exportData = data.results.map((r, idx) => ({
       Rank: idx + 1,
-      'Student Name': r.student_name,
+      'Student Name': r.studentName,
       'Obtained Marks': r.score,
-      'Correct Answers': r.correct_count,
-      'Wrong Answers': r.wrong_count,
-      'Skipped Questions': r.skipped_count,
-      'Total Wrong Topics': r.wrong_topics_count,
-      'Total Skipped Topics': r.skipped_topics_count,
-      'Wrong Topics List': r.wrong_topics_list,
-      'Skipped Topics List': r.skipped_topics_list,
-      'Submission Time': new Date(r.submitted_at).toLocaleString()
+      'Correct Answers': r.correctCount,
+      'Wrong Answers': r.wrongCount,
+      'Skipped Questions': r.skippedCount,
+      'Total Wrong Topics': r.wrongTopicsCount,
+      'Total Skipped Topics': r.skippedTopicsCount,
+      'Wrong Topics List': r.wrongTopicsList,
+      'Skipped Topics List': r.skippedTopicsList,
+      'Submission Time': new Date(r.submittedAt).toLocaleString()
     }));
 
     const ws = xlsx.utils.json_to_sheet(exportData);
@@ -231,7 +231,7 @@ export default function Analytics() {
                   <div key={log.id} className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-start">
                     <AlertTriangle className="w-4 h-4 text-rose-600 mr-3 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-xs font-bold text-rose-900">{log.student_name}</p>
+                      <p className="text-xs font-bold text-rose-900">{log.studentName}</p>
                       <p className="text-[10px] text-rose-700 font-medium uppercase tracking-wider mb-1">{log.type}</p>
                       <p className="text-xs text-rose-600 leading-relaxed">{log.message}</p>
                       <p className="text-[10px] text-rose-400 mt-1">{new Date(log.timestamp).toLocaleTimeString()}</p>
@@ -271,26 +271,26 @@ export default function Analytics() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <p className="text-sm font-bold text-gray-900">{r.student_name}</p>
-                      <p className="text-[10px] text-gray-400">{r.student_email}</p>
+                      <p className="text-sm font-bold text-gray-900">{r.studentName}</p>
+                      <p className="text-[10px] text-gray-400">{r.studentEmail}</p>
                     </td>
                     <td className="px-4 py-4 text-center">
                       <span className="text-sm font-black text-indigo-600">{r.score}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <span className="text-xs font-bold text-emerald-600">{r.correct_count}</span>
+                      <span className="text-xs font-bold text-emerald-600">{r.correctCount}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <span className="text-xs font-bold text-rose-600">{r.wrong_count}</span>
+                      <span className="text-xs font-bold text-rose-600">{r.wrongCount}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <span className="text-xs font-bold text-amber-600">{r.skipped_count}</span>
+                      <span className="text-xs font-bold text-amber-600">{r.skippedCount}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <span className="text-xs font-bold text-rose-400">{r.wrong_topics_count}</span>
+                      <span className="text-xs font-bold text-rose-400">{r.wrongTopicsCount}</span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <span className="text-xs font-bold text-amber-400">{r.skipped_topics_count}</span>
+                      <span className="text-xs font-bold text-amber-400">{r.skippedTopicsCount}</span>
                     </td>
                   </tr>
                 ))}

@@ -72,7 +72,7 @@ export default function Login() {
       } else if (err.code === 'auth/weak-password') {
         message = 'Password should be at least 6 characters.';
       }
-      setError(message);
+      setError(`${message} (${err.code || err.message || 'Unknown error'})`);
     } finally {
       setLoading(false);
     }

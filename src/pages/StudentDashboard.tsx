@@ -33,7 +33,7 @@ export default function StudentDashboard() {
     // Listen for active exams
     const examsQuery = query(
       collection(db, 'exams'),
-      where('is_active', '==', true)
+      where('isActive', '==', true)
     );
 
     const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => {
@@ -51,8 +51,8 @@ export default function StudentDashboard() {
     // Listen for student results
     const resultsQuery = query(
       collection(db, 'results'),
-      where('user_id', '==', user.uid),
-      orderBy('submitted_at', 'desc')
+      where('userId', '==', user.uid),
+      orderBy('submittedAt', 'desc')
     );
 
     const unsubscribeResults = onSnapshot(resultsQuery, (snapshot) => {
@@ -61,7 +61,7 @@ export default function StudentDashboard() {
         return {
           id: doc.id,
           ...data,
-          submitted_at: data.submitted_at?.toDate?.()?.toISOString() || data.submitted_at
+          submittedAt: data.submittedAt?.toDate?.()?.toISOString() || data.submittedAt
         };
       }) as Result[];
       setResults(resultsData);
@@ -156,8 +156,8 @@ export default function StudentDashboard() {
                     <Card key={result.id} className="bg-white border-l-4 border-l-emerald-500">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h4 className="font-bold text-gray-900">{result.exam_title}</h4>
-                          <p className="text-xs text-gray-500 mt-1">Submitted: {new Date(result.submitted_at).toLocaleDateString()}</p>
+                          <h4 className="font-bold text-gray-900">{result.examTitle}</h4>
+                          <p className="text-xs text-gray-500 mt-1">Submitted: {new Date(result.submittedAt).toLocaleDateString()}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-indigo-600">{result.score}</p>
@@ -166,15 +166,15 @@ export default function StudentDashboard() {
                       </div>
                       <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-50">
                         <div className="text-center">
-                          <p className="text-xs font-bold text-emerald-600">{result.correct_count}</p>
+                          <p className="text-xs font-bold text-emerald-600">{result.correctCount}</p>
                           <p className="text-[10px] text-gray-400 uppercase">Correct</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs font-bold text-rose-600">{result.wrong_count}</p>
+                          <p className="text-xs font-bold text-rose-600">{result.wrongCount}</p>
                           <p className="text-[10px] text-gray-400 uppercase">Wrong</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs font-bold text-amber-600">{result.skipped_count}</p>
+                          <p className="text-xs font-bold text-amber-600">{result.skippedCount}</p>
                           <p className="text-[10px] text-gray-400 uppercase">Skipped</p>
                         </div>
                       </div>
