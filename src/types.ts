@@ -1,12 +1,12 @@
 export interface User {
-  id: number;
+  id: string;
   email: string;
   name: string;
   role: 'admin' | 'student';
 }
 
 export interface Question {
-  id: number;
+  id: string;
   text: string;
   option_a: string;
   option_b: string;
@@ -18,18 +18,18 @@ export interface Question {
 }
 
 export interface Exam {
-  id: number;
+  id: string;
   title: string;
   duration: number;
   scheduled_at: string;
   is_active: boolean;
-  questions: string; // JSON string of IDs
+  questions: string | string[]; // Can be JSON string or array of IDs
 }
 
 export interface Result {
-  id: number;
-  user_id: number;
-  exam_id: number;
+  id: string;
+  user_id: string;
+  exam_id: string;
   score: number;
   correct_count: number;
   wrong_count: number;
@@ -45,9 +45,9 @@ export interface Result {
 }
 
 export interface WarningLog {
-  id: number;
-  user_id: number;
-  exam_id: number;
+  id: string;
+  user_id: string;
+  exam_id: string;
   type: string;
   message: string;
   timestamp: string;

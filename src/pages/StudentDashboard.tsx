@@ -14,65 +14,84 @@ import {
   FileText
 } from 'lucide-react';
 import { Exam, Result } from '../types';
+import { useFirebase } from '../context/FirebaseContext';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function StudentDashboard() {
   const [activeExams, setActiveExams] = useState<Exam[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-
-  const token = localStorage.getItem('token');
-  let user: any = {};
-  try {
-    user = JSON.parse(localStorage.getItem('user') || '{}');
-  } catch (e) {
-    user = {};
-  }
+  const { user, profile, logout } = useFirebase();
 
   useEffect(() => {
-    if (!token) navigate('/');
-    fetchData();
-  }, []);
+    if (!user) return;
 
-  const fetchData = async () => {
     setLoading(true);
-    try {
-      const [examsRes, resultsRes] = await Promise.all([
-        fetch('/api/student/exams', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/student/results', { headers: { 'Authorization': `Bearer ${token}` } })
-      ]);
 
-      if (examsRes.status === 401 || examsRes.status === 403 || resultsRes.status === 401 || resultsRes.status === 403) {
-        handleLogout();
-        return;
-      }
+    // Listen for active exams
+    const examsQuery = query(
+      collection(db, 'exams'),
+      where('is_active', '==', true)
+    );
 
-      const examsData = await examsRes.json();
-      const resultsData = await resultsRes.json();
+    const unsubscribeExams = onSnapshot(examsQuery, (snapshot) => {
+      const examsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Exam[];
       setActiveExams(examsData);
-      setResults(resultsData);
-    } catch (err) {
-      console.error(err);
-    } finally {
       setLoading(false);
-    }
-  };
+    }, (error) => {
+      console.error("Error fetching exams:", error);
+      setLoading(false);
+    });
 
-  const handleLogout = () => {
-    localStorage.clear();
+    // Listen for student results
+    const resultsQuery = query(
+      collection(db, 'results'),
+      where('user_id', '==', user.uid),
+      orderBy('submitted_at', 'desc')
+    );
+
+    const unsubscribeResults = onSnapshot(resultsQuery, (snapshot) => {
+      const resultsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          submitted_at: data.submitted_at?.toDate?.()?.toISOString() || data.submitted_at
+        };
+      }) as Result[];
+      setResults(resultsData);
+    }, (error) => {
+      console.error("Error fetching results:", error);
+    });
+
+    return () => {
+      unsubscribeExams();
+      unsubscribeResults();
+    };
+  }, [user]);
+
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
+
+  if (!user || !profile) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Welcome, {user.name}</h1>
-            <p className="text-sm text-gray-500">Student ID: #{user.id}</p>
+            <h1 className="text-2xl font-bold text-gray-900">Welcome, {profile.name}</h1>
+            <p className="text-sm text-gray-500">Student ID: #{user.uid.slice(-6).toUpperCase()}</p>
           </div>
           <div className="flex space-x-2">
-            <Button variant="ghost" size="sm" onClick={fetchData}>
+            <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
             <Button variant="ghost" size="sm" onClick={handleLogout}>

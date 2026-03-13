@@ -24,25 +24,64 @@ import {
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import { Result, WarningLog } from '../types';
+import { useFirebase } from '../context/FirebaseContext';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function Analytics() {
   const { id } = useParams();
   const [data, setData] = useState<{ results: Result[], warnings: WarningLog[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+  const { user } = useFirebase();
 
   useEffect(() => {
-    if (!token) navigate('/');
+    if (!user) return;
     fetchAnalytics();
-  }, []);
+  }, [user, id]);
 
   const fetchAnalytics = async () => {
+    if (!id) return;
     setLoading(true);
-    const res = await fetch(`/api/admin/exams/${id}/analytics`, { headers: { 'Authorization': `Bearer ${token}` } });
-    const json = await res.json();
-    setData(json);
-    setLoading(false);
+    try {
+      // Fetch results
+      const resultsQuery = query(
+        collection(db, 'results'),
+        where('exam_id', '==', id),
+        orderBy('score', 'desc')
+      );
+      const resultsSnapshot = await getDocs(resultsQuery);
+      const resultsData = resultsSnapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          ...d,
+          submitted_at: d.submitted_at?.toDate?.()?.toISOString() || d.submitted_at
+        };
+      }) as Result[];
+
+      // Fetch warnings
+      const warningsQuery = query(
+        collection(db, 'warning_logs'),
+        where('exam_id', '==', id),
+        orderBy('timestamp', 'desc')
+      );
+      const warningsSnapshot = await getDocs(warningsQuery);
+      const warningsData = warningsSnapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          ...d,
+          timestamp: d.timestamp?.toDate?.()?.toISOString() || d.timestamp
+        };
+      }) as WarningLog[];
+
+      setData({ results: resultsData, warnings: warningsData });
+    } catch (err) {
+      console.error("Error fetching analytics:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleExport = () => {

@@ -13,13 +13,16 @@ import {
   Menu, 
   X 
 } from 'lucide-react';
-import { Question, Exam } from '../types';
+import { Question, Exam, Result, WarningLog } from '../types';
+import { useFirebase } from '../context/FirebaseContext';
+import { doc, getDoc, collection, addDoc, serverTimestamp, setDoc, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function ExamEngine() {
   const { id } = useParams();
   const [exam, setExam] = useState<Exam & { questions: Question[] } | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [showNavigator, setShowNavigator] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -30,10 +33,10 @@ export default function ExamEngine() {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+  const { user, profile } = useFirebase();
 
   useEffect(() => {
-    if (!token) navigate('/');
+    if (!user) return;
     fetchExam();
     setupProctoring();
     
@@ -49,7 +52,7 @@ export default function ExamEngine() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       stopCamera();
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (timeLeft > 0) {
@@ -61,21 +64,63 @@ export default function ExamEngine() {
   }, [timeLeft, exam, isFinished]);
 
   const fetchExam = async () => {
+    if (!id || !user) return;
     try {
-      const res = await fetch(`/api/student/exams/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
-      const data = await res.json();
-      if (data.error) {
-        alert(data.error);
+      const examDoc = await getDoc(doc(db, 'exams', id));
+      if (!examDoc.exists()) {
+        alert('Exam not found');
         navigate('/dashboard');
         return;
       }
-      if (!data.questions || data.questions.length === 0) {
+      const examData = examDoc.data() as Exam;
+      
+      // Fetch questions
+      let questionIds: string[] = [];
+      if (Array.isArray(examData.questions)) {
+        questionIds = examData.questions;
+      } else if (typeof examData.questions === 'string') {
+        try {
+          questionIds = JSON.parse(examData.questions);
+        } catch (e) {
+          questionIds = [];
+        }
+      }
+
+      if (questionIds.length === 0) {
         alert('This exam has no questions.');
         navigate('/dashboard');
         return;
       }
-      setExam(data);
-      setTimeLeft((data.duration || 0) * 60);
+
+      const questionsData: Question[] = [];
+      for (let i = 0; i < questionIds.length; i += 10) {
+        const chunk = questionIds.slice(i, i + 10);
+        const qQuery = query(collection(db, 'questions'), where('__name__', 'in', chunk));
+        const qSnapshot = await getDocs(qQuery);
+        qSnapshot.forEach(doc => {
+          questionsData.push({ id: doc.id, ...doc.data() } as Question);
+        });
+      }
+
+      const sortedQuestions = questionIds.map(qid => questionsData.find(q => q.id === qid)).filter(Boolean) as Question[];
+
+      setExam({ ...examData, questions: sortedQuestions });
+      setTimeLeft((examData.duration || 0) * 60);
+
+      // Fetch existing responses
+      const responsesQuery = query(
+        collection(db, 'responses'),
+        where('user_id', '==', user.uid),
+        where('exam_id', '==', id)
+      );
+      const responsesSnapshot = await getDocs(responsesQuery);
+      const existingAnswers: Record<string, string> = {};
+      responsesSnapshot.forEach(doc => {
+        const data = doc.data();
+        existingAnswers[data.question_id] = data.answer;
+      });
+      setAnswers(existingAnswers);
+
     } catch (err) {
       console.error(err);
       alert('Failed to load exam. Please try again.');
@@ -88,9 +133,8 @@ export default function ExamEngine() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) videoRef.current.srcObject = stream;
       
-      // Simulated AI detection loop
       const interval = setInterval(() => {
-        if (Math.random() > 0.98) { // Simulate random detection
+        if (Math.random() > 0.98) {
           logWarning('Movement', 'Repeated head movement away from screen detected.');
         }
       }, 10000);
@@ -109,20 +153,36 @@ export default function ExamEngine() {
   };
 
   const logWarning = async (type: string, message: string) => {
-    await fetch(`/api/student/exams/${id}/warning`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ type, message }),
-    });
+    if (!user || !id) return;
+    try {
+      await addDoc(collection(db, 'warning_logs'), {
+        user_id: user.uid,
+        exam_id: id,
+        type,
+        message,
+        timestamp: serverTimestamp(),
+        student_name: profile?.name || user.email
+      });
+    } catch (e) {
+      console.error("Error logging warning:", e);
+    }
   };
 
-  const handleAnswer = async (questionId: number, answer: string) => {
+  const handleAnswer = async (questionId: string, answer: string) => {
     setAnswers(prev => ({ ...prev, [questionId]: answer }));
-    await fetch(`/api/student/exams/${id}/response`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ question_id: questionId, answer }),
-    });
+    if (!user || !id) return;
+    try {
+      const responseId = `${user.uid}_${id}_${questionId}`;
+      await setDoc(doc(db, 'responses', responseId), {
+        user_id: user.uid,
+        exam_id: id,
+        question_id: questionId,
+        answer,
+        timestamp: serverTimestamp()
+      });
+    } catch (e) {
+      console.error("Error saving response:", e);
+    }
   };
 
   const handleSubmit = async (auto = false) => {
@@ -131,26 +191,63 @@ export default function ExamEngine() {
       return;
     }
     
+    if (!user || !id || !exam) return;
+
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/student/exams/${id}/submit`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert(data.error || 'Submission failed');
-        navigate('/dashboard');
-        return;
-      }
+      let correct = 0;
+      let wrong = 0;
+      let skipped = 0;
+      const wrongTopics: Record<string, number> = {};
+      const skippedTopics: Record<string, number> = {};
 
-      setResult(data);
+      exam.questions.forEach(q => {
+        const studentAnswer = answers[q.id];
+        if (!studentAnswer) {
+          skipped++;
+          skippedTopics[q.topic] = (skippedTopics[q.topic] || 0) + 1;
+        } else if (studentAnswer === q.correct_answer) {
+          correct++;
+        } else {
+          wrong++;
+          wrongTopics[q.topic] = (wrongTopics[q.topic] || 0) + 1;
+        }
+      });
+
+      const score = correct;
+
+      const resultData = {
+        user_id: user.uid,
+        exam_id: id,
+        score,
+        correct_count: correct,
+        wrong_count: wrong,
+        skipped_count: skipped,
+        exam_title: exam.title,
+        student_name: profile?.name || user.email || '',
+        student_email: user.email || '',
+        skipped_topics_count: Object.keys(skippedTopics).length,
+        wrong_topics_count: Object.keys(wrongTopics).length,
+        skipped_topics_list: Object.keys(skippedTopics).join(', '),
+        wrong_topics_list: Object.keys(wrongTopics).join(', ')
+      };
+
+      await addDoc(collection(db, 'results'), {
+        ...resultData,
+        submitted_at: serverTimestamp()
+      });
+
+      setResult({
+        score,
+        correct,
+        wrong,
+        skipped
+      });
       setIsFinished(true);
       stopCamera();
     } catch (err) {
       console.error(err);
-      alert('Network error during submission. Please try again.');
+      alert('Error during submission. Please try again.');
     } finally {
       setIsSubmitting(false);
       setShowSubmitModal(false);

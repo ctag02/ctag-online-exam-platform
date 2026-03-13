@@ -7,13 +7,29 @@ import { motion } from 'motion/react';
 import { CheckSquare, Square as SquareIcon, FileText, Upload, Plus, BarChart2, Play, Square, LogOut, Users, Database, TrendingUp } from 'lucide-react';
 import { Question, Exam } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
+import { db, auth } from '../lib/firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  getDocs,
+  writeBatch
+} from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import * as xlsx from 'xlsx';
+import { useFirebase, OperationType, handleFirestoreError } from '../context/FirebaseContext';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('exams');
   const [stats, setStats] = useState<any>({});
   const [questions, setQuestions] = useState<Question[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
-  const [selectedQuestions, setSelectedQuestions] = useState<number[]>([]);
+  const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const [newExam, setNewExam] = useState({ title: '', duration: 150, scheduled_at: '' });
   const [newQuestion, setNewQuestion] = useState<Partial<Question>>({
     text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', topic: '', difficulty: 'Medium'
@@ -21,45 +37,76 @@ export default function AdminDashboard() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionStatus, setExtractionStatus] = useState<string | null>(null);
   const navigate = useNavigate();
-
-  const token = localStorage.getItem('token');
+  const { profile } = useFirebase();
 
   useEffect(() => {
-    if (!token) navigate('/');
-    fetchStats();
-    fetchQuestions();
-    fetchExams();
+    // Real-time questions
+    const qQuestions = query(collection(db, 'questions'), orderBy('createdAt', 'desc'));
+    const unsubQuestions = onSnapshot(qQuestions, (snapshot) => {
+      const qList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Question));
+      setQuestions(qList);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'questions'));
+
+    // Real-time exams
+    const qExams = query(collection(db, 'exams'), orderBy('createdAt', 'desc'));
+    const unsubExams = onSnapshot(qExams, (snapshot) => {
+      const eList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Exam));
+      setExams(eList);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'exams'));
+
+    // Stats (simplified for now, can be improved with more listeners)
+    const fetchStats = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const resultsSnap = await getDocs(collection(db, 'results'));
+        setStats({
+          totalStudents: usersSnap.docs.filter(d => d.data().role === 'student').length,
+          totalExams: snapshotExams.docs.length,
+          questionBankSize: snapshotQuestions.docs.length,
+          recentResults: resultsSnap.size
+        });
+      } catch (e) {}
+    };
+
+    // We can use the snapshots to update stats too
+    let snapshotQuestions: any = { docs: [] };
+    let snapshotExams: any = { docs: [] };
+
+    const unsubStatsQ = onSnapshot(collection(db, 'questions'), (s) => {
+      snapshotQuestions = s;
+      updateStats();
+    });
+    const unsubStatsE = onSnapshot(collection(db, 'exams'), (s) => {
+      snapshotExams = s;
+      updateStats();
+    });
+    const unsubStatsU = onSnapshot(collection(db, 'users'), (s) => {
+      updateStats();
+    });
+    const unsubStatsR = onSnapshot(collection(db, 'results'), (s) => {
+      updateStats();
+    });
+
+    const updateStats = async () => {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const resultsSnap = await getDocs(collection(db, 'results'));
+      setStats({
+        totalStudents: usersSnap.docs.filter(d => d.data().role === 'student').length,
+        totalExams: snapshotExams.docs.length,
+        questionBankSize: snapshotQuestions.docs.length,
+        recentResults: resultsSnap.size
+      });
+    };
+
+    return () => {
+      unsubQuestions();
+      unsubExams();
+      unsubStatsQ();
+      unsubStatsE();
+      unsubStatsU();
+      unsubStatsR();
+    };
   }, []);
-
-  const fetchStats = async () => {
-    const res = await fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.status === 401 || res.status === 403) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json();
-    setStats(data);
-  };
-
-  const fetchQuestions = async () => {
-    const res = await fetch('/api/admin/questions', { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.status === 401 || res.status === 403) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json();
-    setQuestions(data);
-  };
-
-  const fetchExams = async () => {
-    const res = await fetch('/api/admin/exams', { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.status === 401 || res.status === 403) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json();
-    setExams(data);
-  };
 
   const handleCreateExam = async () => {
     if (!newExam.title || selectedQuestions.length === 0) {
@@ -67,40 +114,41 @@ export default function AdminDashboard() {
       return;
     }
 
-    console.log('Sending exam data:', { ...newExam, questions: selectedQuestions });
-
-    const res = await fetch('/api/admin/exams', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ...newExam, questions: selectedQuestions }),
-    });
-    if (res.ok) {
+    try {
+      await addDoc(collection(db, 'exams'), {
+        ...newExam,
+        questionIds: selectedQuestions,
+        is_active: false,
+        createdAt: new Date().toISOString()
+      });
       alert('Exam created successfully!');
-      fetchExams();
       setNewExam({ title: '', duration: 150, scheduled_at: '' });
       setSelectedQuestions([]);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'exams');
     }
   };
 
-  const handleToggleExam = async (id: number, currentStatus: boolean) => {
-    const res = await fetch(`/api/admin/exams/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ is_active: !currentStatus }),
-    });
-    if (res.ok) fetchExams();
+  const handleToggleExam = async (id: string, currentStatus: boolean) => {
+    try {
+      await updateDoc(doc(db, 'exams', id), {
+        is_active: !currentStatus
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `exams/${id}`);
+    }
   };
 
   const handleAddQuestion = async () => {
-    const res = await fetch('/api/admin/questions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(newQuestion),
-    });
-    if (res.ok) {
+    try {
+      await addDoc(collection(db, 'questions'), {
+        ...newQuestion,
+        createdAt: new Date().toISOString()
+      });
       alert('Question added!');
-      fetchQuestions();
       setNewQuestion({ text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', topic: '', difficulty: 'Medium' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'questions');
     }
   };
 
@@ -108,19 +156,38 @@ export default function AdminDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = xlsx.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = xlsx.utils.sheet_to_json(ws);
 
-    const res = await fetch('/api/admin/questions/bulk', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      alert(data.message);
-      fetchQuestions();
-    }
+        const batch = writeBatch(db);
+        data.forEach((row: any) => {
+          const qRef = doc(collection(db, 'questions'));
+          batch.set(qRef, {
+            text: row.text || row.Question,
+            option_a: row.option_a || row.A,
+            option_b: row.option_b || row.B,
+            option_c: row.option_c || row.C,
+            option_d: row.option_d || row.D,
+            correct_answer: row.correct_answer || row.Answer,
+            topic: row.topic || row.Topic || 'General',
+            difficulty: row.difficulty || row.Difficulty || 'Medium',
+            createdAt: new Date().toISOString()
+          });
+        });
+        await batch.commit();
+        alert(`Successfully uploaded ${data.length} questions!`);
+      } catch (error) {
+        console.error('Bulk upload error:', error);
+        alert('Failed to process Excel file. Please check the format.');
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +196,7 @@ export default function AdminDashboard() {
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.CUSTOM_GEMINI_API_KEY;
     if (!apiKey) {
-      setExtractionStatus('Error: Gemini API key not configured. Please add CUSTOM_GEMINI_API_KEY to your AI Studio environment variables.');
+      setExtractionStatus('Error: Gemini API key not configured.');
       setIsExtracting(false);
       return;
     }
@@ -148,30 +215,22 @@ export default function AdminDashboard() {
       reader.readAsDataURL(file);
       const base64Data = await base64Promise;
 
-      setExtractionStatus('AI is analyzing questions (this may take a moment)...');
+      setExtractionStatus('AI is analyzing questions...');
       
       let response;
       let retries = 5;
-      let lastError = null;
       const models = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-3.1-pro-preview"];
       let currentModelIdx = 0;
 
       while (retries > 0) {
         try {
-          const modelName = models[currentModelIdx];
-          console.log(`Attempting extraction with model: ${modelName}`);
           const genAI = new GoogleGenAI({ apiKey });
           response = await genAI.models.generateContent({
-            model: modelName,
+            model: models[currentModelIdx],
             contents: {
               parts: [
-                {
-                  inlineData: {
-                    data: base64Data,
-                    mimeType: 'application/pdf',
-                  },
-                },
-                { text: "Extract all multiple choice questions from this PDF. For each question, provide the text, options A, B, C, D, and the correct answer (A, B, C, or D). Also provide a topic and difficulty level (Easy, Medium, Hard). Return ONLY a JSON array." }
+                { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+                { text: "Extract all multiple choice questions from this PDF. Return ONLY a JSON array of objects with: text, option_a, option_b, option_c, option_d, correct_answer (A/B/C/D), topic, difficulty." }
               ]
             },
             config: {
@@ -195,78 +254,52 @@ export default function AdminDashboard() {
               }
             }
           });
-          break; // Success!
+          break;
         } catch (err: any) {
-          lastError = err;
-          const errorMsg = err.message || '';
-          console.error(`Extraction attempt failed with ${models[currentModelIdx]}:`, err);
-          
-          if (errorMsg.includes('503') || errorMsg.includes('500') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('high demand') || errorMsg.includes('quota')) {
-            retries--;
-            if (retries > 0) {
-              // Rotate to next model
-              currentModelIdx = (currentModelIdx + 1) % models.length;
-              setExtractionStatus(`AI is busy. Switching model and retrying... (${5 - retries}/5)`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            }
+          retries--;
+          if (retries > 0) {
+            currentModelIdx = (currentModelIdx + 1) % models.length;
+            setExtractionStatus(`AI busy, retrying... (${5 - retries}/5)`);
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
           }
-          throw err; // Not a retryable error or out of retries
+          throw err;
         }
       }
 
-      if (!response) throw lastError || new Error('Failed to get response from AI after multiple attempts');
+      if (!response) throw new Error('Failed to get response from AI');
 
       let text = response.text || '[]';
-      // Clean markdown code blocks if present
-      if (text.includes('```')) {
-        text = text.replace(/```json\n?|```/g, '').trim();
-      }
-      
-      let extractedQuestions;
-      try {
-        extractedQuestions = JSON.parse(text);
-      } catch (e) {
-        console.error('JSON Parse Error:', text);
-        throw new Error('AI returned invalid data format. Please try again.');
-      }
+      if (text.includes('```')) text = text.replace(/```json\n?|```/g, '').trim();
+      const extractedQuestions = JSON.parse(text);
       
       if (!Array.isArray(extractedQuestions) || extractedQuestions.length === 0) {
-        setExtractionStatus('No questions found in this PDF.');
+        setExtractionStatus('No questions found.');
         setIsExtracting(false);
         return;
       }
 
-      setExtractionStatus(`Saving ${extractedQuestions.length} questions to database...`);
-      const res = await fetch('/api/admin/questions/bulk-json', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(extractedQuestions),
+      setExtractionStatus(`Saving ${extractedQuestions.length} questions...`);
+      const batch = writeBatch(db);
+      extractedQuestions.forEach(q => {
+        const qRef = doc(collection(db, 'questions'));
+        batch.set(qRef, {
+          ...q,
+          createdAt: new Date().toISOString()
+        });
       });
-
-      const data = await res.json();
-      if (res.ok) {
-        setExtractionStatus(`Success: ${data.message}`);
-        fetchQuestions();
-        fetchStats();
-      } else {
-        setExtractionStatus(`Error: ${data.error || 'Failed to save questions'}`);
-      }
+      await batch.commit();
+      setExtractionStatus(`Success: Saved ${extractedQuestions.length} questions!`);
     } catch (error: any) {
-      console.error('PDF Extraction Error:', error);
-      setExtractionStatus(`Error: ${error.message || 'Extraction failed'}`);
+      setExtractionStatus(`Error: ${error.message}`);
     } finally {
       setIsExtracting(false);
-      // Clear status after 5 seconds
       setTimeout(() => setExtractionStatus(null), 5000);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.clear();
+  const handleLogout = async () => {
+    await signOut(auth);
     navigate('/');
   };
 
@@ -284,7 +317,7 @@ export default function AdminDashboard() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-gray-500">Welcome back, C-TAG Administrator</p>
+            <p className="text-gray-500">Welcome back, {profile?.name || 'Administrator'}</p>
           </div>
           <Button variant="ghost" onClick={handleLogout}>
             <LogOut className="w-4 h-4 mr-2" /> Logout
@@ -368,22 +401,7 @@ export default function AdminDashboard() {
                         <div>
                           <h4 className="font-semibold text-gray-900">{exam.title}</h4>
                           <p className="text-xs text-gray-500">
-                            {exam.duration} mins • {(() => {
-                              try {
-                                if (!exam.questions) return 0;
-                                // Handle both stringified JSON and already parsed arrays
-                                const qData = typeof exam.questions === 'string' 
-                                  ? JSON.parse(exam.questions) 
-                                  : exam.questions;
-                                
-                                if (Array.isArray(qData)) return qData.length;
-                                if (typeof qData === 'object' && qData !== null) return Object.keys(qData).length;
-                                return 0;
-                              } catch (e) {
-                                console.error('Error parsing questions for exam:', exam.id, e);
-                                return 0;
-                              }
-                            })()} questions
+                            {exam.duration} mins • {Array.isArray(exam.questionIds) ? exam.questionIds.length : 0} questions
                           </p>
                           <p className="text-xs text-gray-400 mt-1">Scheduled: {exam.scheduled_at || 'Not set'}</p>
                         </div>

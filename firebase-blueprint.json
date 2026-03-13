@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "student"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "name", "role"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Exam question",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "option_a": { "type": "string" },
+        "option_b": { "type": "string" },
+        "option_c": { "type": "string" },
+        "option_d": { "type": "string" },
+        "correct_answer": { "type": "string", "enum": ["A", "B", "C", "D"] },
+        "topic": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "option_a", "option_b", "option_c", "option_d", "correct_answer"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Exam definition",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "duration": { "type": "integer" },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "is_active": { "type": "boolean" },
+        "questionIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "duration", "scheduled_at", "is_active", "questionIds"]
+    },
+    "Response": {
+      "title": "Response",
+      "description": "Student response to a question",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "answer": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "examId", "questionId", "answer"]
+    },
+    "Result": {
+      "title": "Result",
+      "description": "Exam result for a student",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examId": { "type": "string" },
+        "score": { "type": "number" },
+        "correct_count": { "type": "integer" },
+        "wrong_count": { "type": "integer" },
+        "skipped_count": { "type": "integer" },
+        "submitted_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "examId", "score", "correct_count", "wrong_count", "skipped_count", "submitted_at"]
+    },
+    "WarningLog": {
+      "title": "WarningLog",
+      "description": "Log of exam warnings (e.g. tab switching)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examId": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "examId", "type", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/questions/{questionId}": { "schema": "Question", "description": "Question bank" },
+    "/exams/{examId}": { "schema": "Exam", "description": "Exam definitions" },
+    "/exams/{examId}/responses/{responseId}": { "schema": "Response", "description": "Question responses" },
+    "/results/{resultId}": { "schema": "Result", "description": "Exam results" },
+    "/warning_logs/{logId}": { "schema": "WarningLog", "description": "Security warning logs" }
+  }
+}

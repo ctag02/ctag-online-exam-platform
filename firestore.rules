@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: email, name, role, createdAt
+    //
+    // Collection: questions
+    // Fields: text, option_a, option_b, option_c, option_d, correct_answer, topic, difficulty, createdAt
+    //
+    // Collection: exams
+    // Fields: title, duration, scheduled_at, is_active, questionIds, createdAt
+    //
+    // Collection: exams/{examId}/responses
+    // Fields: userId, examId, questionId, answer, updatedAt
+    //
+    // Collection: results
+    // Fields: userId, examId, score, correct_count, wrong_count, skipped_count, submitted_at
+    //
+    // Collection: warning_logs
+    // Fields: userId, examId, type, message, timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "ctagclub@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['email', 'name', 'role']) &&
+             hasOnlyAllowedFields(['email', 'name', 'role', 'createdAt']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.role in ['admin', 'student'];
+    }
+
+    function isValidQuestion(data) {
+      return hasRequiredFields(['text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 2000 &&
+             data.correct_answer in ['A', 'B', 'C', 'D'];
+    }
+
+    function isValidExam(data) {
+      return hasRequiredFields(['title', 'duration', 'scheduled_at', 'is_active', 'questionIds']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.duration is int && data.duration > 0 &&
+             data.questionIds is list;
+    }
+
+    function isValidResponse(data) {
+      return hasRequiredFields(['userId', 'examId', 'questionId', 'answer']) &&
+             data.userId == request.auth.uid &&
+             data.answer is string && data.answer.size() > 0 && data.answer.size() < 10;
+    }
+
+    function isValidResult(data) {
+      return hasRequiredFields(['userId', 'examId', 'score', 'correct_count', 'wrong_count', 'skipped_count', 'submitted_at']) &&
+             data.userId == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+    }
+
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidQuestion(request.resource.data);
+    }
+
+    match /exams/{examId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidExam(request.resource.data);
+
+      match /responses/{responseId} {
+        allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+        allow create: if isAuthenticated() && isValidResponse(request.resource.data);
+        allow update: if isAuthenticated() && isValidResponse(request.resource.data) && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    match /results/{resultId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidResult(request.resource.data);
+    }
+
+    match /warning_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+  }
+}
