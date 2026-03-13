@@ -106,8 +106,9 @@ export default function Login() {
         </Card>
 
         <div className="mt-8 text-center text-xs text-gray-400">
-          <p>Admin ID: support@c-tag.online</p>
-          <p>Password: TE@M4ctag</p>
+          <p className="font-semibold mb-1">Demo Credentials:</p>
+          <p>Admin: support@c-tag.online (Pass: TE@M4ctag)</p>
+          <p>Student: palak@gmail.com (Pass: student123)</p>
         </div>
       </motion.div>
     </div>

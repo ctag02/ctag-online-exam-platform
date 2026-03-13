@@ -54,6 +54,14 @@ async function initDb() {
       const hashedPass = bcrypt.hashSync('TE@M4ctag', 10);
       db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(adminEmail, hashedPass, 'Admin', 'admin');
     }
+
+    // Add default student for testing
+    const studentEmail = 'palak@gmail.com';
+    const existingStudent = db.prepare('SELECT * FROM users WHERE email = ?').get(studentEmail);
+    if (!existingStudent) {
+      const hashedPass = bcrypt.hashSync('student123', 10);
+      db.prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)').run(studentEmail, hashedPass, 'Palak', 'student');
+    }
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('Database initialization failed. This is common on Vercel if native modules are not supported:', err);
